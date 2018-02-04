@@ -6,6 +6,9 @@ import com.github.jackofmosttrades.ykpiv.YkPivException;
 
 import java.security.*;
 
+/**
+ * Provides Signature implementations that sign using YkPivPrivateKey instances.
+ */
 public abstract class YkPivSignature extends SignatureSpi {
 
     private final Hash hash;

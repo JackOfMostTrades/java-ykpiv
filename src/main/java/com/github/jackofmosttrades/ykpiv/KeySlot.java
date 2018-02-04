@@ -1,5 +1,8 @@
 package com.github.jackofmosttrades.ykpiv;
 
+/**
+ * PIV key slots, which represents slots where keys and objects can be saved.
+ */
 public enum KeySlot {
     AUTHENTICATION(InternalConstants.YKPIV_KEY_AUTHENTICATION, InternalConstants.YKPIV_OBJ_AUTHENTICATION),
     SIGNATURE(InternalConstants.YKPIV_KEY_SIGNATURE, InternalConstants.YKPIV_OBJ_SIGNATURE),

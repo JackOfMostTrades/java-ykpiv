@@ -4,6 +4,20 @@ import java.security.Provider;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * A JCE security provider which is backed by a yubikey PIV application. Installing this provider allows you to
+ * create a KeyManagerFactory which will yield keys representing the private key on a yubikey. It also installs
+ * Signature implementations that will sign data using the yubikey.
+ *
+ * For example:
+ *
+ *    Security.addProvider(new YkPivSecurityProvider());
+ *
+ *    SSLContext sslContext = SSLContext.getInstance("TLS");
+ *    KeyManagerFactory kmf = KeyManagerFactory.getInstance(YkPivKeyManagerFactory.ALGORITHM);
+ *    kmf.init(YkPivKeyManagerFactory.initParameters(KeySlot.AUTHENTICATION));
+ *    sslContext.init(kmf.getKeyManagers(), null, null);
+ */
 public class YkPivSecurityProvider extends Provider {
     public static final String PROVIDER_NAME = "YKPIV";
 

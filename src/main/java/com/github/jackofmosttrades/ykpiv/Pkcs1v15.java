@@ -2,6 +2,9 @@ package com.github.jackofmosttrades.ykpiv;
 
 import javax.crypto.BadPaddingException;
 
+/**
+ * Performs padding/unpadding according to the PKCS#1 v1.5 standard.
+ */
 /* package-private */ class Pkcs1v15 {
 
     private Pkcs1v15() {}

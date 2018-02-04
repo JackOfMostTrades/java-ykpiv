@@ -6,7 +6,10 @@ import com.github.jackofmosttrades.ykpiv.YkPiv;
 
 import java.security.PrivateKey;
 
-class YkPivPrivateKey implements PrivateKey {
+/**
+ * Represents a private key stored on a yubikey.
+ */
+/* package-private */ class YkPivPrivateKey implements PrivateKey {
     private static final long serialVersionUID = 8307205839880653472L;
 
     private final transient YkPiv ykPiv;

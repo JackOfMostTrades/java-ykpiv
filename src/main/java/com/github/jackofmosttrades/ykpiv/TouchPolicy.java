@@ -1,5 +1,8 @@
 package com.github.jackofmosttrades.ykpiv;
 
+/**
+ * Represents touch policies that can be used for keys generated/imported into a yubikey.
+ */
 public enum TouchPolicy {
     DEFAULT(InternalConstants.YKPIV_TOUCHPOLICY_DEFAULT),
     NEVER(InternalConstants.YKPIV_TOUCHPOLICY_NEVER),

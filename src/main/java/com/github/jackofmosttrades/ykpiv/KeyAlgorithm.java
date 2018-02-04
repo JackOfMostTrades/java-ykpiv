@@ -1,7 +1,7 @@
 package com.github.jackofmosttrades.ykpiv;
 
 /**
- * Created by ihaken on 2/3/18.
+ * Key algorithms supported by ykpiv.
  */
 public enum KeyAlgorithm {
     RSA_1024(InternalConstants.YKPIV_ALGO_RSA1024),

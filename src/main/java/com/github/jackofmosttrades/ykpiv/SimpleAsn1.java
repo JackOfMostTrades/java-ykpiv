@@ -5,7 +5,14 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-public class SimpleAsn1 {
+/**
+ * Provides utilities for serializing and parsing simple ASN.1 structures.
+ */
+/* package-private */ class SimpleAsn1 {
+
+    /**
+     * Represents a parsed ASN.1 object, e.g. its tag and its raw data bytes.
+     */
     public static class Asn1Object {
         private final int tag;
         private final ByteString data;
@@ -24,9 +31,13 @@ public class SimpleAsn1 {
         }
     }
 
+    /**
+     * Builds a new serialized ASN.1 object.
+     * @param tag The tag the object should have. Only short tags (one byte) are supported.
+     * @param data The data the object will hold.
+     * @return
+     */
     public static ByteString build(byte tag, ByteString ... data) {
-        // Intentionally do not support long tags
-
         int length = 0;
         for (ByteString datum : data) {
             length += datum.getLength();
@@ -56,6 +67,12 @@ public class SimpleAsn1 {
         return ByteString.copyOf(baos.toByteArray());
     }
 
+    /**
+     * Decodes ASN.1 objects from the input. The input may be a list of objects concatenated together, so this method
+     * continues to parse out objects until it reaches the end of the input ByteString.
+     * @param input
+     * @return
+     */
     public static List<Asn1Object> decode(ByteString input) {
         if (input == null || input.getLength() == 0) {
             return null;
@@ -98,6 +115,11 @@ public class SimpleAsn1 {
         return objects;
     }
 
+    /**
+     * Decodes an ASN.1 object from the input. If the input is not exactly one object then an exception will be thrown.
+     * @param input
+     * @return
+     */
     public static Asn1Object decodeSingleton(ByteString input) {
         if (input == null || input.getLength() == 0) {
             return null;

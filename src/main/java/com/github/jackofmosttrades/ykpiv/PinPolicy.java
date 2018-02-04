@@ -1,5 +1,8 @@
 package com.github.jackofmosttrades.ykpiv;
 
+/**
+ * Represents PIN policies that can be used for keys generated/imported into a yubikey.
+ */
 public enum PinPolicy {
 
     DEFAULT(InternalConstants.YKPIV_PINPOLICY_DEFAULT),

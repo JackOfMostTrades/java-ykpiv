@@ -44,6 +44,10 @@ public class SslConnectionTest {
         return certGen.build(new JcaContentSignerBuilder("SHA256withRSA").build(issuerKey));
     }
 
+    /**
+     * Test an SSLContext where the server private key is stored on the yubikey
+     * @throws Exception
+     */
     @Test
     public void testYkPivServer() throws Exception {
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
@@ -85,6 +89,10 @@ public class SslConnectionTest {
         }
     }
 
+    /**
+     * Test an SSLContext where the client private key is stored on the yubikey
+     * @throws Exception
+     */
     @Test
     public void testYkPivClient() throws Exception {
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");

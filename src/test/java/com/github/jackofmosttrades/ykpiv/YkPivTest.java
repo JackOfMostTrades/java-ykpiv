@@ -21,29 +21,21 @@ import java.util.Base64;
 public class YkPivTest {
 
     @Test
-    public void testVerify() throws YkPivException {
+    public void testLoginAndNumTries() throws YkPivException {
         try (YkPiv ykPiv = new YkPiv()) {
-            YkPiv.VerifyResult result = ykPiv.verify(YkPiv.DEFAULT_PIN);
-            Assert.assertEquals(true, result.isVerified());
-            Assert.assertEquals(-1, result.getNumRetries());
+            Assert.assertTrue(ykPiv.login(YkPiv.DEFAULT_PIN));
+            Assert.assertEquals(-1, ykPiv.getNumPinAttemptsRemaining());
         }
 
         try (YkPiv ykPiv = new YkPiv()) {
-            YkPiv.VerifyResult result = ykPiv.verify(null);
-            Assert.assertEquals(false, result.isVerified());
-            Assert.assertEquals(3, result.getNumRetries());
-            result = ykPiv.verify("111111");
-            Assert.assertEquals(false, result.isVerified());
-            Assert.assertEquals(2, result.getNumRetries());
-            result = ykPiv.verify(null);
-            Assert.assertEquals(false, result.isVerified());
-            Assert.assertEquals(2, result.getNumRetries());
+            Assert.assertEquals(3, ykPiv.getNumPinAttemptsRemaining());
+            Assert.assertFalse(ykPiv.login("111111"));
+            Assert.assertEquals(2, ykPiv.getNumPinAttemptsRemaining());
         }
 
         try (YkPiv ykPiv = new YkPiv()) {
-            YkPiv.VerifyResult result = ykPiv.verify(YkPiv.DEFAULT_PIN);
-            Assert.assertEquals(true, result.isVerified());
-            Assert.assertEquals(-1, result.getNumRetries());
+            Assert.assertTrue(ykPiv.login(YkPiv.DEFAULT_PIN));
+            Assert.assertEquals(-1, ykPiv.getNumPinAttemptsRemaining());
         }
     }
 
@@ -98,7 +90,7 @@ public class YkPivTest {
         try (YkPiv ykPiv = new YkPiv()) {
             ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
             PublicKey publicKey = ykPiv.generateKey(KeySlot.AUTHENTICATION, keyAlgorithm, PinPolicy.NEVER, TouchPolicy.NEVER);
-            ykPiv.verify(YkPiv.DEFAULT_PIN);
+            Assert.assertTrue(ykPiv.login(YkPiv.DEFAULT_PIN));
             ByteString signature = ykPiv.hashAndSign(data, hashAlgorithm, keyAlgorithm, KeySlot.AUTHENTICATION);
             Signature sig = Signature.getInstance(jceAlgorithm);
             sig.initVerify(publicKey);
@@ -157,7 +149,7 @@ public class YkPivTest {
             
             ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
             ykPiv.importPrivateKey(KeySlot.AUTHENTICATION, keyPair.getPrivate(), PinPolicy.NEVER, TouchPolicy.NEVER);
-            ykPiv.verify(YkPiv.DEFAULT_PIN);
+            Assert.assertTrue(ykPiv.login(YkPiv.DEFAULT_PIN));
             ByteString signature = ykPiv.hashAndSign(data, hashAlgorithm, keyAlgorithm, KeySlot.AUTHENTICATION);
             Signature sig = Signature.getInstance(jceAlgorithm);
             sig.initVerify(keyPair.getPublic());
@@ -187,21 +179,18 @@ public class YkPivTest {
     @Test
     public void testChangePin() throws YkPivException {
         try (YkPiv ykPiv = new YkPiv()) {
-            ykPiv.verify("111111");
+            Assert.assertFalse(ykPiv.login("111111"));
             ykPiv.changePin(YkPiv.DEFAULT_PIN, "222222");
-            YkPiv.VerifyResult result = ykPiv.verify(null);
-            Assert.assertEquals(3, result.getNumRetries());
+            Assert.assertEquals(3, ykPiv.getNumPinAttemptsRemaining());
         }
         try (YkPiv ykPiv = new YkPiv()) {
-            YkPiv.VerifyResult result = ykPiv.verify("222222");
-            Assert.assertTrue(result.isVerified());
+            Assert.assertTrue(ykPiv.login("222222"));
         }
         try (YkPiv ykPiv = new YkPiv()) {
             ykPiv.changePin("222222", YkPiv.DEFAULT_PIN);
         }
         try (YkPiv ykPiv = new YkPiv()) {
-            YkPiv.VerifyResult result = ykPiv.verify(YkPiv.DEFAULT_PIN);
-            Assert.assertTrue(result.isVerified());
+            Assert.assertTrue(ykPiv.login(YkPiv.DEFAULT_PIN));
         }
     }
 
@@ -210,24 +199,21 @@ public class YkPivTest {
         // Cause the PIN to get blocked
         try (YkPiv ykPiv = new YkPiv()) {
             for (int i = 0; i < 3; i++) {
-                ykPiv.verify("111111");
+                Assert.assertFalse(ykPiv.login("111111"));
             }
-            YkPiv.VerifyResult result = ykPiv.verify(null);
-            Assert.assertFalse(result.isVerified());
-            Assert.assertEquals(0, result.getNumRetries());
+            Assert.assertEquals(0, ykPiv.getNumPinAttemptsRemaining());
         }
 
+        // Login with the right PIN should fail because it's blocked
         try (YkPiv ykPiv = new YkPiv()) {
-            YkPiv.VerifyResult result = ykPiv.verify(YkPiv.DEFAULT_PIN);
-            Assert.assertFalse(result.isVerified());
+            Assert.assertFalse(ykPiv.login(YkPiv.DEFAULT_PIN));
         }
 
         try (YkPiv ykPiv = new YkPiv()) {
             ykPiv.unblockPin(YkPiv.DEFAULT_PUK, YkPiv.DEFAULT_PIN);
         }
         try (YkPiv ykPiv = new YkPiv()) {
-            YkPiv.VerifyResult result = ykPiv.verify(YkPiv.DEFAULT_PIN);
-            Assert.assertTrue(result.isVerified());
+            Assert.assertTrue(ykPiv.login(YkPiv.DEFAULT_PIN));
         }
     }
 
@@ -236,7 +222,7 @@ public class YkPivTest {
         // Cause the PIN to get blocked
         try (YkPiv ykPiv = new YkPiv()) {
             for (int i = 0; i < 3; i++) {
-                ykPiv.verify("111111");
+                Assert.assertFalse(ykPiv.login("111111"));
             }
         }
 
@@ -248,20 +234,17 @@ public class YkPivTest {
             } catch (YkPivException e) {
                 Assert.assertTrue(e.getMessage().startsWith("Wrong PIN"));
             }
-            YkPiv.VerifyResult result = ykPiv.verify(YkPiv.DEFAULT_PIN);
-            Assert.assertFalse(result.isVerified());
+            Assert.assertFalse(ykPiv.login(YkPiv.DEFAULT_PIN));
 
             ykPiv.unblockPin("11111111", YkPiv.DEFAULT_PIN);
-            result = ykPiv.verify(YkPiv.DEFAULT_PIN);
-            Assert.assertTrue(result.isVerified());
+            Assert.assertTrue(ykPiv.login(YkPiv.DEFAULT_PIN));
 
             ykPiv.changePuk("11111111", YkPiv.DEFAULT_PUK);
         }
 
         try (YkPiv ykPiv = new YkPiv()) {
             ykPiv.unblockPin(YkPiv.DEFAULT_PUK, YkPiv.DEFAULT_PIN);
-            YkPiv.VerifyResult result = ykPiv.verify(YkPiv.DEFAULT_PIN);
-            Assert.assertTrue(result.isVerified());
+            Assert.assertTrue(ykPiv.login(YkPiv.DEFAULT_PIN));
         }
     }
 
@@ -269,7 +252,7 @@ public class YkPivTest {
     public void testAttest() throws YkPivException, CertificateEncodingException {
         try (YkPiv ykPiv = new YkPiv()) {
             ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
-            ykPiv.verify(YkPiv.DEFAULT_PIN);
+            Assert.assertTrue(ykPiv.login(YkPiv.DEFAULT_PIN));
             PublicKey publicKey = ykPiv.generateKey(KeySlot.AUTHENTICATION, KeyAlgorithm.RSA_2048, PinPolicy.NEVER, TouchPolicy.NEVER);
             X509Certificate cert = (X509Certificate) ykPiv.attest(KeySlot.AUTHENTICATION);
             Assert.assertEquals("CN=YubiKey PIV Attestation 9a", cert.getSubjectDN().toString());

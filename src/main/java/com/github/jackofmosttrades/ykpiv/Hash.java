@@ -1,5 +1,8 @@
 package com.github.jackofmosttrades.ykpiv;
 
+/**
+ * Represents hash algorithms known to the ykpiv library.
+ */
 public enum Hash {
     MD5("MD5"),
     SHA1("SHA-1"),

@@ -1,5 +1,8 @@
 package com.github.jackofmosttrades.ykpiv;
 
+/**
+ * Constants of the ykpiv library. These are mostly copied from ykpiv.h, though not exclusively.
+ */
 /*package-private*/ class InternalConstants {
     public static final byte[] APPLICATION_ID = new byte[]{ (byte)0xa0, 0x00, 0x00, 0x03, 0x08 };
 

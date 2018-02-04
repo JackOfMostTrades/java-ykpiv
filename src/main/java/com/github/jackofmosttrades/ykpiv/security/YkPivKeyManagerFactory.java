@@ -12,6 +12,16 @@ import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
 
+/**
+ * A KeyManagerFactory implementation that yields YkPivPrivateKey instances, i.e. private keys representing keys stored
+ * on a yubikey.
+ *
+ * This class can either be constructed directly, i.e. with
+ *     KeyManagerFactory kmf = new YkPivKeyManagerFactory();
+ *
+ * or by the regular JCE mechanism:
+ *     KeyManagerFactory kmf = KeyManagerFactory.getInstance(YkPivKeyManagerFactory.ALGORITHM);
+ */
 public class YkPivKeyManagerFactory extends KeyManagerFactory {
 
     public static final String ALGORITHM = "YKPIV";

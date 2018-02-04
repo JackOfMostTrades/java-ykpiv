@@ -27,6 +27,10 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+/**
+ * This is the core class representing access to a yubikey's PIV application. Once constructed, a YkPiv object should
+ * be cleaned up by calling close().
+ */
 public class YkPiv implements AutoCloseable {
 
     private static final Logger LOGGER = Logger.getLogger(YkPiv.class.getName());
@@ -38,14 +42,25 @@ public class YkPiv implements AutoCloseable {
     private Card card;
 
     public YkPiv() throws YkPivException {
-        this("Yubikey", false);
+        this("Yubikey");
     }
 
-    public YkPiv(String wanted, boolean verbose) throws YkPivException {
+    /**
+     * Construct a YkPiv instance where we attempt to connect to a YubiKey with a name containing the wanted string.
+     * Pass in null to connect to any smartcard device on the system.
+     * @param wanted
+     * @throws YkPivException
+     */
+    public YkPiv(String wanted) throws YkPivException {
         this.card = null;
         connect(wanted);
     }
 
+    /**
+     * Close the connection to the underlying yubikey and cleanup resources. No method calls are valid on this object
+     * after calling close()
+     * @throws YkPivException
+     */
     @Override
     public void close() throws YkPivException {
         if (card != null) {
@@ -102,33 +117,14 @@ public class YkPiv implements AutoCloseable {
         throw new YkPivException("no usable reader found.");
     }
 
-    public static class VerifyResult {
-        private final boolean verified;
-        private final int numRetries;
-
-        public VerifyResult(boolean verified, int numRetries) {
-            this.verified = verified;
-            this.numRetries = numRetries;
-        }
-
-        public boolean isVerified() {
-            return verified;
-        }
-
-        public int getNumRetries() {
-            return numRetries;
-        }
-    }
-
     /**
-     * Attempts to login and verify the provided pin. If the pin is valid, returns -1. Otherwise returns the number of
-     * attempts left. If the PIN is null, this will return the number of attempts left without causing it to decrement.
+     * Issues a login instruction to the yubikey. If pin is null, it will just return the number of attempts remaining.
+     * If login was successful, this will return -1. Otherwise it will return the number of pin attempts remaining.
      * @param pin
      * @return
      * @throws YkPivException
      */
-    public VerifyResult verify(String pin) throws YkPivException {
-
+    private int loginInternal(String pin) throws YkPivException {
         byte[] pinBytes = null;
         if (pin != null) {
             pinBytes = pin.getBytes(StandardCharsets.UTF_8);
@@ -154,15 +150,40 @@ public class YkPiv implements AutoCloseable {
         }
 
         if (response.getSW() == InternalConstants.SW_SUCCESS) {
-            return new VerifyResult(true, -1);
+            return -1;
         }
         if ((response.getSW() >> 8) == 0x63) {
-            return new VerifyResult(false, response.getSW() & 0xf);
+            return (response.getSW() & 0xf);
         }
         if (response.getSW() == InternalConstants.SW_ERR_AUTH_BLOCKED) {
-            return new VerifyResult(false, 0);
+            return 0;
         }
         throw new YkPivException("Unexpected SW result: " + response.getSW());
+    }
+
+    /**
+     * Attempts to login and authenticate with the given pin. Returns true if successful and false otherwise. Note that
+     * this may return false even with the correct pin if the PIN is blocked; see getNumPinAttemptsRemaining().
+     * @param pin
+     * @return true if logging in was successful
+     * @throws YkPivException
+     */
+    public boolean login(String pin) throws YkPivException {
+        int result = loginInternal(pin);
+        if (result == -1) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Gets the number of PIN attempts remaining. If this instance of YkPiv is already in a logged-in state, this
+     * will return -1.
+     * @return
+     * @throws YkPivException
+     */
+    public int getNumPinAttemptsRemaining() throws YkPivException {
+        return loginInternal(null);
     }
 
     private ByteString transferData(final CommandAPDU adpu, ByteString data) throws YkPivException {
@@ -283,10 +304,21 @@ public class YkPiv implements AutoCloseable {
         }
     }
 
+    /**
+     * Sets a new management key
+     * @param newKey
+     * @throws YkPivException If you have not yet successfully called authenticate.
+     */
     public void setMgmtKey(ByteString newKey) throws YkPivException {
         setMgmtKey(newKey, false);
     }
 
+    /**
+     * Sets a new management key
+     * @param newKey
+     * @param requireTouch Should the yubikey require user presence whenever authenticating.
+     * @throws YkPivException If you have not yet successfully called authenticate.
+     */
     public void setMgmtKey(ByteString newKey, boolean requireTouch) throws YkPivException {
 
         if (newKey.getLength() != 24) {
@@ -312,6 +344,11 @@ public class YkPiv implements AutoCloseable {
         }
     }
 
+    /**
+     * Returns a string representing the version of the yubikey firmware.
+     * @return
+     * @throws YkPivException
+     */
     public String getVersion() throws YkPivException {
 
         ResponseAPDU response = null;
@@ -377,6 +414,18 @@ public class YkPiv implements AutoCloseable {
         return out.getData();
     }
 
+    /**
+     * Performs a PKCS#1 v1.5 signature on data read from the inputStream, hashed with the given hash algorithm, signed using the provided key algorithm,
+     * using the key from the given key slot.
+     *
+     * @param inputStream
+     * @param hashAlg
+     * @param algorithm
+     * @param keySlot
+     * @return
+     * @throws YkPivException
+     * @throws IOException
+     */
     public ByteString hashAndSign(InputStream inputStream, Hash hashAlg, KeyAlgorithm algorithm, KeySlot keySlot) throws YkPivException, IOException {
         try {
             final byte[] buffer = new byte[4096];
@@ -391,6 +440,18 @@ public class YkPiv implements AutoCloseable {
         }
     }
 
+    /**
+     * Performs a PKCS#1 v1.5 signature on data provided by input, hashed with the given hash algorithm, signed using the provided key algorithm,
+     * using the key from the given key slot.
+     *
+     * @param input
+     * @param hashAlg
+     * @param algorithm
+     * @param keySlot
+     * @return
+     * @throws YkPivException
+     * @throws IOException
+     */
     public ByteString hashAndSign(byte[] input, Hash hashAlg, KeyAlgorithm algorithm, KeySlot keySlot) throws YkPivException {
         try {
             MessageDigest md = MessageDigest.getInstance(hashAlg.getJceAlgorithmName());
@@ -416,6 +477,19 @@ public class YkPiv implements AutoCloseable {
                 0x65, 0x03, 0x04, 0x02, 0x03, 0x05, 0x00, 0x04, 0x40}));
     }
 
+    /**
+     * Performs a PKCS#1 v1.5 signature on previously hashed data. The hash algorithm used to hash the data is still
+     * needed to perform the proper encoding. The signature will be done with the given key algorithm with the key
+     * in the given slot.
+     *
+     * @param hashed
+     * @param hashAlg
+     * @param algorithm
+     * @param keySlot
+     * @return
+     * @throws YkPivException
+     * @throws IOException
+     */
     public ByteString sign(ByteString hashed, Hash hashAlg, KeyAlgorithm algorithm, KeySlot keySlot) throws YkPivException {
         ByteString bytesToSign;
         if (algorithm == KeyAlgorithm.RSA_1024 || algorithm == KeyAlgorithm.RSA_2048) {
@@ -443,18 +517,36 @@ public class YkPiv implements AutoCloseable {
         return generateAuthenticate(rawIn, algorithm, key, false);
     }
 
+    /**
+     * Perform a decrypt operation of the give data with the provided key algorithm with the key in the given slot.
+     * @param rawIn
+     * @param algorithm
+     * @param key
+     * @return
+     * @throws YkPivException
+     */
     public ByteString decipher(ByteString rawIn, KeyAlgorithm algorithm, KeySlot key) throws YkPivException {
         return generateAuthenticate(rawIn, algorithm.getYkpivAlgorithm(), key.getKeyId(), true);
     }
 
+    /**
+     * Genearte a new key inside the yubikey in the given slot with the given key algorithm. The key will be bound with the given
+     * PIN policy and touch policy.
+     * @param slot
+     * @param algorithm
+     * @param pinPolicy Can be null in which case the device's default policy will be used.
+     * @param touchPolicy Can be null in which case the device's default policy will be used.
+     * @return
+     * @throws YkPivException
+     */
     public PublicKey generateKey(KeySlot slot, KeyAlgorithm algorithm, PinPolicy pinPolicy, TouchPolicy touchPolicy) throws YkPivException {
 
         List<ByteString> params = new ArrayList<>();
         params.add(SimpleAsn1.build(InternalConstants.YKPIV_ALGO_TAG, ByteString.copyOf(new byte[] {algorithm.getYkpivAlgorithm()})));
-        if (pinPolicy != PinPolicy.DEFAULT) {
+        if (pinPolicy != null && pinPolicy != PinPolicy.DEFAULT) {
             params.add(SimpleAsn1.build(InternalConstants.YKPIV_PINPOLICY_TAG, ByteString.copyOf(new byte[] {pinPolicy.getYkpivPinPolicy()})));
         }
-        if (touchPolicy != TouchPolicy.DEFAULT) {
+        if (touchPolicy != null && touchPolicy != TouchPolicy.DEFAULT) {
             params.add(SimpleAsn1.build(InternalConstants.YKPIV_TOUCHPOLICY_TAG, ByteString.copyOf(new byte[] {touchPolicy.getYkpivTouchPolicy()})));
         }
         final ByteString data = SimpleAsn1.build((byte)0xac, params.toArray(new ByteString[params.size()]));
@@ -541,6 +633,14 @@ public class YkPiv implements AutoCloseable {
         return ByteString.copyOf(bytes);
     }
 
+    /**
+     * Import a private key into the given key slot. The key will be bound to the given pinPolicy and touchPolicy.
+     * @param keySlot
+     * @param privateKey
+     * @param pinPolicy Can be null in which case the device's default policy will be used.
+     * @param touchPolicy Can be null in which case the device's default policy will be used.
+     * @throws YkPivException
+     */
     public void importPrivateKey(KeySlot keySlot, PrivateKey privateKey, PinPolicy pinPolicy, TouchPolicy touchPolicy) throws YkPivException {
 
         try {
@@ -597,12 +697,12 @@ public class YkPiv implements AutoCloseable {
             for (int i = 0; i < params.size(); i++) {
                 SimpleAsn1.build((byte)(paramTag+i), params.get(i)).writeTo(baos);
             }
-            if (pinPolicy != PinPolicy.DEFAULT) {
+            if (pinPolicy != null && pinPolicy != PinPolicy.DEFAULT) {
                 baos.write(InternalConstants.YKPIV_PINPOLICY_TAG);
                 baos.write(1);
                 baos.write(pinPolicy.getYkpivPinPolicy());
             }
-            if (touchPolicy != TouchPolicy.DEFAULT) {
+            if (touchPolicy != null && touchPolicy != TouchPolicy.DEFAULT) {
                 baos.write(InternalConstants.YKPIV_TOUCHPOLICY_TAG);
                 baos.write(1);
                 baos.write(touchPolicy.getYkpivTouchPolicy());
@@ -691,18 +791,42 @@ public class YkPiv implements AutoCloseable {
         }
     }
 
+    /**
+     * Changes the current PIN for the device.
+     * @param currentPin
+     * @param newPin
+     * @throws YkPivException
+     */
     public void changePin(String currentPin, String newPin) throws YkPivException {
         changePinInternal(currentPin, newPin, InternalConstants.YKPIV_INS_CHANGE_REFERENCE, (byte)0x80);
     }
 
+    /**
+     * Changes the current PUK for the device.
+     * @param currentPuk
+     * @param newPuk
+     * @throws YkPivException
+     */
     public void changePuk(String currentPuk, String newPuk) throws YkPivException {
         changePinInternal(currentPuk, newPuk, InternalConstants.YKPIV_INS_CHANGE_REFERENCE, (byte)0x81);
     }
 
+    /**
+     * Unblocks the PIN for the device, resetting it to the new value.
+     * @param currentPuk
+     * @param newPin
+     * @throws YkPivException
+     */
     public void unblockPin(String currentPuk, String newPin) throws YkPivException {
         changePinInternal(currentPuk, newPin, InternalConstants.YKPIV_INS_RESET_RETRY, (byte)0x80);
     }
 
+    /**
+     * Saves the provide certificate into the given key slot.
+     * @param slot
+     * @param cert
+     * @throws YkPivException
+     */
     public void saveCertificate(KeySlot slot, Certificate cert) throws YkPivException {
         try {
             final ByteString encoded = ByteString.copyOf(cert.getEncoded());
@@ -715,6 +839,15 @@ public class YkPiv implements AutoCloseable {
             throw new IllegalStateException("Unable to encode certificate", e);
         }
     }
+
+    /**
+     * Feteches the certificate saved in the given key slot. If there is no certificate in
+     * the slot this will return null.
+     *
+     * @param slot
+     * @return
+     * @throws YkPivException
+     */
     public X509Certificate readCertificate(KeySlot slot) throws YkPivException {
         List<SimpleAsn1.Asn1Object> objects = SimpleAsn1.decode(fetchObject(slot.getObjectId()));
         if (objects == null || objects.size() == 0) {
@@ -733,10 +866,21 @@ public class YkPiv implements AutoCloseable {
         }
     }
 
+    /**
+     * Deletes the certificate (or any other object) in the given key slot.
+     * @param slot
+     * @throws YkPivException
+     */
     public void deleteCertificate(KeySlot slot) throws YkPivException {
         saveObject(slot.getObjectId(), ByteString.EMPTY);
     }
 
+    /**
+     * Generates an attestation certificate of the key in the given key slot.
+     * @param slot
+     * @return
+     * @throws YkPivException
+     */
     public X509Certificate attest(KeySlot slot) throws YkPivException {
         ByteString output = transferData(new CommandAPDU(0x00, InternalConstants.YKPIV_INS_ATTEST, slot.getKeyId(), 0x00),
                 ByteString.copyOf(new byte[] {0x00}));

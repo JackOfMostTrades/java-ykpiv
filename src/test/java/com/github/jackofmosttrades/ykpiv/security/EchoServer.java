@@ -8,6 +8,10 @@ import java.io.OutputStream;
 import java.net.Socket;
 import java.net.SocketException;
 
+/**
+ * A simple server implementation that echos back one byte from each connection. Serves over SSL using the provided
+ * SSLContext, and will require client authentication if the clientAuth constructor parameter is true.
+ */
 public class EchoServer implements AutoCloseable {
 
     private final Listener listener;
