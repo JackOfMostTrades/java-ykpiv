@@ -6,15 +6,14 @@ import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.SecretKeySpec;
 import javax.smartcardio.*;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.*;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
-import java.security.cert.*;
 import java.security.cert.Certificate;
+import java.security.cert.CertificateEncodingException;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPrivateCrtKey;
@@ -71,13 +70,13 @@ public class YkPiv implements AutoCloseable {
             if (wanted != null) {
                 if (!cardTerminal.getName().contains(wanted)) {
                     if (verbose) {
-                        LOGGER.info(String.format("skipping reader '%s' since it doesn't match '%s'.\n", cardTerminal.getName(), wanted));
+                        LOGGER.info(String.format("skipping reader '%s' since it doesn't match '%s'.", cardTerminal.getName(), wanted));
                     }
                     continue;
                 }
             }
             if (verbose) {
-                LOGGER.info(String.format("trying to connect to reader '%s'.\n", cardTerminal.getName()));
+                LOGGER.info(String.format("trying to connect to reader '%s'.", cardTerminal.getName()));
             }
             Card card;
             try {
@@ -341,6 +340,7 @@ public class YkPiv implements AutoCloseable {
         switch(algorithm) {
             case InternalConstants.YKPIV_ALGO_RSA1024:
                 key_len = 128;
+                // Falls through
             case InternalConstants.YKPIV_ALGO_RSA2048:
                 if(key_len == 0) {
                     key_len = 256;
@@ -351,6 +351,7 @@ public class YkPiv implements AutoCloseable {
                 break;
             case InternalConstants.YKPIV_ALGO_ECCP256:
                 key_len = 32;
+                // Falls through
             case InternalConstants.YKPIV_ALGO_ECCP384:
                 if(key_len == 0) {
                     key_len = 48;
@@ -380,6 +381,20 @@ public class YkPiv implements AutoCloseable {
             throw new YkPivException("Failed parsing signature reply; got unexpected tag: " + out.getTag());
         }
         return out.getData();
+    }
+
+    public byte[] hashAndSign(InputStream inputStream, Hash hashAlg, KeyAlgorithm algorithm, KeySlot keySlot) throws YkPivException, IOException {
+        try {
+            final byte[] buffer = new byte[4096];
+            int n;
+            MessageDigest md = MessageDigest.getInstance(hashAlg.getJceAlgorithmName());
+            while ((n = inputStream.read(buffer)) > 0) {
+                md.update(buffer, 0, n);
+            }
+            return sign(md.digest(), hashAlg, algorithm, keySlot);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalArgumentException("Invalid hash algorithm: " + hashAlg);
+        }
     }
 
     public byte[] hashAndSign(byte[] input, Hash hashAlg, KeyAlgorithm algorithm, KeySlot keySlot) throws YkPivException {

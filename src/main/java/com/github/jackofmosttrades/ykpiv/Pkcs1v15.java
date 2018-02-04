@@ -34,7 +34,7 @@ import javax.crypto.BadPaddingException;
                 zeroBlockIndex = i;
                 break;
             }
-            if (message[i] != 0xFF) {
+            if (message[i] != (byte)0xFF) {
                 throw new BadPaddingException();
             }
         }
