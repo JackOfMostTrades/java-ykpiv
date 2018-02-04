@@ -16,3 +16,19 @@ try (YkPiv ykPiv = new YkPiv()) {
     byte[] signature = ykPiv.hashAndSign(data, hashAlgorithm, keyAlgorithm, KeySlot.AUTHENTICATION);
 }
 ```
+
+## Using ykpiv for TLS connections
+You can use the yubikey PIV application to hold the private key used for TLS connections (on either the server or client side). The [SSLConnectionTest](src/test/java/com/github/jackofmosttrades/ykpiv/security/SslConnectionTest.java) shows an example of how to do this. In short:
+
+```java
+Security.addProvider(new YkPivSecurityProvider());
+
+SSLContext sslContext = SSLContext.getInstance("TLS");
+KeyManagerFactory kmf = KeyManagerFactory.getInstance(YkPivKeyManagerFactory.ALGORITHM);
+kmf.init(YkPivKeyManagerFactory.initParameters(KeySlot.AUTHENTICATION));
+sslContext.init(kmf.getKeyManagers(), null, null);
+
+// Use this SSLContext to either create a socket directly, or e.g. with an HttpsUrlConnection
+HttpsURLConnection connection = (HttpsURLConnection) new URL("https://example.com").openConnection();
+connection.setSSLSocketFactory(sslContext.getSocketFactory());
+```

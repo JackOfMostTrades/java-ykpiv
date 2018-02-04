@@ -11,9 +11,7 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.cert.Certificate;
-import java.security.cert.CertificateEncodingException;
-import java.security.cert.CertificateException;
-import java.security.cert.CertificateFactory;
+import java.security.cert.*;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPrivateCrtKey;
@@ -720,7 +718,7 @@ public class YkPiv implements AutoCloseable {
             throw new IllegalStateException("Unable to encode certificate", e);
         }
     }
-    public Certificate readCertificate(KeySlot slot) throws YkPivException {
+    public X509Certificate readCertificate(KeySlot slot) throws YkPivException {
         List<SimpleAsn1.Asn1Object> objects = SimpleAsn1.decode(fetchObject(slot.getObjectId()));
         if (objects == null || objects.size() == 0) {
             return null;
@@ -731,7 +729,7 @@ public class YkPiv implements AutoCloseable {
         try {
             final CertificateFactory certificateFactory = CertificateFactory.getInstance("X509");
             try (ByteArrayInputStream bais = new ByteArrayInputStream(objects.get(0).getData())) {
-                return certificateFactory.generateCertificate(bais);
+                return (X509Certificate) certificateFactory.generateCertificate(bais);
             }
         } catch (CertificateException | IOException e) {
             throw new YkPivException("Unable to parse fetched certificate.", e);
@@ -742,7 +740,7 @@ public class YkPiv implements AutoCloseable {
         saveObject(slot.getObjectId(), new byte[0]);
     }
 
-    public Certificate attest(KeySlot slot) throws YkPivException {
+    public X509Certificate attest(KeySlot slot) throws YkPivException {
         byte[] output = transferData(new CommandAPDU(0x00, InternalConstants.YKPIV_INS_ATTEST, slot.getKeyId(), 0x00), new byte[] {0x00});
         if (output.length == 0) {
             return null;
@@ -750,7 +748,7 @@ public class YkPiv implements AutoCloseable {
         try {
             CertificateFactory certificateFactory = CertificateFactory.getInstance("X509");
             try (ByteArrayInputStream bais = new ByteArrayInputStream(output)) {
-                return certificateFactory.generateCertificate(bais);
+                return (X509Certificate) certificateFactory.generateCertificate(bais);
             }
         } catch (CertificateException | IOException e) {
             throw new IllegalStateException("Unable to parse attestation certificate.", e);

@@ -14,7 +14,7 @@ public enum Hash {
         this.jceAlgorithmName = jceAlgorithmName;
     }
 
-    /* package-private */ String getJceAlgorithmName() {
+    public String getJceAlgorithmName() {
         return jceAlgorithmName;
     }
 }
