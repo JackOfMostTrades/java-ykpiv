@@ -1,13 +1,44 @@
+plugins {
+    id "com.jfrog.bintray" version "1.7.3"
+}
+
 apply plugin: "java"
+apply plugin: 'maven-publish'
 
 group = "com.github.jackofmosttrades"
-version = "1.0-SNAPSHOT"
-
-repositories {
-    mavenCentral()
-}
+version = "1.0"
 
 dependencies {
     testCompile 'junit:junit:4.12'
     testCompile 'org.bouncycastle:bcpkix-jdk15on:1.59'
+}
+
+// Publishing. Run with gradlew bintrayUpload
+bintray {
+    user = System.getenv('BINTRAY_USER')
+    key = System.getenv('BINTRAY_KEY')
+    publications = ['mavenJava']
+    pkg {
+        repo = 'maven'
+        name = 'java-ykpiv'
+        licenses = ['MIT']
+        vcsUrl = 'https://github.com/JackOfMostTrades/java-ykpiv.git'
+    }
+}
+task sourceJar(type: Jar) {
+    from sourceSets.main.allJava
+}
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            groupId project.group
+            artifactId 'ykpiv'
+            version project.version
+
+            artifact sourceJar {
+                classifier "sources"
+            }
+        }
+    }
 }

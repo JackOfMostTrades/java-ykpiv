@@ -2,6 +2,22 @@
 
 This is a pure Java implementation of the [ykpiv library](https://developers.yubico.com/yubico-piv-tool/) created by Yubico. Unlike other ports of the ykpiv library to other languages, this is a complete port of the ykpiv library and not a wrapper around the native library. It is implemented on top of the [Java Smart Card I/O API](https://docs.oracle.com/javase/7/docs/jre/api/security/smartcardio/spec/), so it *does not* include any JNI component. Therefore, this library should be immediately usable on all platforms that support a complete JRE.
 
+## Dependency
+
+At present, the easiest way to include this library is by referencing the following bintray repo:
+
+```
+repositories {
+    maven {
+        url 'https://dl.bintray.com/jackofmosttrades/maven/'
+    }
+}
+
+dependencies {
+    compile 'com.github.jackofmosttrades:ykpiv:1.0'
+}
+```
+
 ## Usage
 
 The main class for this library is [YkPiv](src/main/java/com/github/jackofmosttrades/ykpiv/YkPiv.java). Upon construction it creates a connection to the yubikey, and so you should close the YkPiv object to disconnect.
