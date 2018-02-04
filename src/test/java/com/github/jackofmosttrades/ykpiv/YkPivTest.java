@@ -7,8 +7,8 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
-import java.security.cert.*;
 import java.security.cert.Certificate;
+import java.security.cert.*;
 import java.util.Base64;
 
 /**
@@ -49,7 +49,7 @@ public class YkPivTest {
 
     @Test
     public void testSetMgmtKey() throws YkPivException {
-        final byte[] ALT_MGMT_KEY = new byte[]{11,12,13,14,15,16,17,18,11,12,13,14,15,16,17,18,11,12,13,14,15,16,17,18};
+        final ByteString ALT_MGMT_KEY = ByteString.copyOf(new byte[]{11,12,13,14,15,16,17,18,11,12,13,14,15,16,17,18,11,12,13,14,15,16,17,18});
 
         try (YkPiv ykPiv = new YkPiv()) {
             ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
@@ -99,11 +99,11 @@ public class YkPivTest {
             ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
             PublicKey publicKey = ykPiv.generateKey(KeySlot.AUTHENTICATION, keyAlgorithm, PinPolicy.NEVER, TouchPolicy.NEVER);
             ykPiv.verify(YkPiv.DEFAULT_PIN);
-            byte[] signature = ykPiv.hashAndSign(data, hashAlgorithm, keyAlgorithm, KeySlot.AUTHENTICATION);
+            ByteString signature = ykPiv.hashAndSign(data, hashAlgorithm, keyAlgorithm, KeySlot.AUTHENTICATION);
             Signature sig = Signature.getInstance(jceAlgorithm);
             sig.initVerify(publicKey);
             sig.update(data);
-            Assert.assertTrue(sig.verify(signature));
+            Assert.assertTrue(sig.verify(signature.toByteArray()));
         }
     }
 
@@ -158,11 +158,11 @@ public class YkPivTest {
             ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
             ykPiv.importPrivateKey(KeySlot.AUTHENTICATION, keyPair.getPrivate(), PinPolicy.NEVER, TouchPolicy.NEVER);
             ykPiv.verify(YkPiv.DEFAULT_PIN);
-            byte[] signature = ykPiv.hashAndSign(data, hashAlgorithm, keyAlgorithm, KeySlot.AUTHENTICATION);
+            ByteString signature = ykPiv.hashAndSign(data, hashAlgorithm, keyAlgorithm, KeySlot.AUTHENTICATION);
             Signature sig = Signature.getInstance(jceAlgorithm);
             sig.initVerify(keyPair.getPublic());
             sig.update(data);
-            Assert.assertTrue(sig.verify(signature));
+            Assert.assertTrue(sig.verify(signature.toByteArray()));
         }
     }
 

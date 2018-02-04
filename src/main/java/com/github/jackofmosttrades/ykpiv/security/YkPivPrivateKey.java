@@ -7,8 +7,9 @@ import com.github.jackofmosttrades.ykpiv.YkPiv;
 import java.security.PrivateKey;
 
 class YkPivPrivateKey implements PrivateKey {
+    private static final long serialVersionUID = 8307205839880653472L;
 
-    private final YkPiv ykPiv;
+    private final transient YkPiv ykPiv;
     private final KeyAlgorithm keyAlgorithm;
     private final KeySlot keySlot;
 

@@ -8,9 +8,9 @@ import java.util.List;
 public class SimpleAsn1 {
     public static class Asn1Object {
         private final int tag;
-        private final byte[] data;
+        private final ByteString data;
 
-        public Asn1Object(int tag, byte[] data) {
+        public Asn1Object(int tag, ByteString data) {
             this.tag = tag;
             this.data = data;
         }
@@ -19,17 +19,17 @@ public class SimpleAsn1 {
             return tag;
         }
 
-        public byte[] getData() {
+        public ByteString getData() {
             return data;
         }
     }
 
-    public static byte[] build(byte tag, byte[] ... data) {
+    public static ByteString build(byte tag, ByteString ... data) {
         // Intentionally do not support long tags
 
         int length = 0;
-        for (byte[] datum : data) {
-            length += datum.length;
+        for (ByteString datum : data) {
+            length += datum.getLength();
         }
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream(length+4);
@@ -46,63 +46,60 @@ public class SimpleAsn1 {
         }
 
         try {
-            for (byte[] datum : data) {
-                baos.write(datum);
+            for (ByteString datum : data) {
+                datum.writeTo(baos);
             }
         } catch (IOException e){
             throw new IllegalStateException(e);
         }
 
-        return baos.toByteArray();
+        return ByteString.copyOf(baos.toByteArray());
     }
 
-    public static List<Asn1Object> decode(byte[] input) {
-        if (input == null || input.length == 0) {
+    public static List<Asn1Object> decode(ByteString input) {
+        if (input == null || input.getLength() == 0) {
             return null;
         }
 
         List<Asn1Object> objects = new ArrayList<>();
         int restIndex = 0;
-        while (restIndex < input.length) {
+        while (restIndex < input.getLength()) {
             int index = restIndex;
-            int tag = input[index] & 0xff;
+            int tag = input.get(index) & 0xff;
             index += 1;
             if ((tag & 0x1f) == 0x1f) {
                 tag = 0;
                 int octet;
                 do {
-                    octet = input[index] & 0xff;
+                    octet = input.get(index) & 0xff;
                     index += 1;
                     tag = (tag << 8) + (octet & 0x7f);
                 } while ((octet & 0x80) != 0);
             }
 
-            int length = input[index] & 0xff;
+            int length = input.get(index) & 0xff;
             index += 1;
             if ((length & 0x80) != 0) {
                 int n = (length & 0x7f);
                 length = 0;
                 for (int i = 0; i < n; i++) {
-                    length = (length << 8) + (input[index+i] & 0xff);
+                    length = (length << 8) + (input.get(index+i) & 0xff);
                 }
                 index += n;
             }
-            if (index + length > input.length) {
+            if (index + length > input.getLength()) {
                 throw new IllegalArgumentException("Length descriptor goes beyond end of input.");
             }
 
-            byte[] data = new byte[length];
-            System.arraycopy(input, index, data, 0, length);
-            objects.add(new Asn1Object(tag, data));
-
+            objects.add(new Asn1Object(tag, input.slice(index, length)));
             restIndex = index+length;
         }
 
         return objects;
     }
 
-    public static Asn1Object decodeSingleton(byte[] input) {
-        if (input == null || input.length == 0) {
+    public static Asn1Object decodeSingleton(ByteString input) {
+        if (input == null || input.getLength() == 0) {
             return null;
         }
 

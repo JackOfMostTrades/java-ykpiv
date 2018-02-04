@@ -1,5 +1,6 @@
 package com.github.jackofmosttrades.ykpiv.security;
 
+import com.github.jackofmosttrades.ykpiv.ByteString;
 import com.github.jackofmosttrades.ykpiv.Hash;
 import com.github.jackofmosttrades.ykpiv.YkPivException;
 
@@ -50,7 +51,9 @@ public abstract class YkPivSignature extends SignatureSpi {
             throw new IllegalStateException("YkPivSignature not initialized.");
         }
         try {
-            return privateKey.getYkPiv().sign(messageDigest.digest(), hash, privateKey.getKeyAlgorithm(), privateKey.getKeySlot());
+            return privateKey.getYkPiv().sign(
+                    ByteString.copyOf(messageDigest.digest()), hash, privateKey.getKeyAlgorithm(), privateKey.getKeySlot())
+                    .toByteArray();
         } catch (YkPivException e) {
             throw new SignatureException("Exception while trying to create signature.", e);
         }

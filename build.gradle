@@ -8,6 +8,10 @@ apply plugin: 'maven-publish'
 group = "com.github.jackofmosttrades"
 version = "1.0"
 
+repositories {
+    jcenter()
+}
+
 dependencies {
     testCompile 'junit:junit:4.12'
     testCompile 'org.bouncycastle:bcpkix-jdk15on:1.59'

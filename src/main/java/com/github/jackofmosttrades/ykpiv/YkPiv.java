@@ -6,7 +6,10 @@ import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.SecretKeySpec;
 import javax.smartcardio.*;
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
@@ -17,18 +20,21 @@ import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPrivateCrtKey;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.spec.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class YkPiv implements AutoCloseable {
 
     private static final Logger LOGGER = Logger.getLogger(YkPiv.class.getName());
 
-    public static final byte[] DEFAULT_MGMT_KEY = new byte[] {1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8};
+    public static final ByteString DEFAULT_MGMT_KEY = ByteString.copyOf(new byte[] {1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8});
     public static final String DEFAULT_PIN = "123456";
     public static final String DEFAULT_PUK = "12345678";
 
-    private final boolean verbose;
     private Card card;
 
     public YkPiv() throws YkPivException {
@@ -36,7 +42,6 @@ public class YkPiv implements AutoCloseable {
     }
 
     public YkPiv(String wanted, boolean verbose) throws YkPivException {
-        this.verbose = verbose;
         this.card = null;
         connect(wanted);
     }
@@ -67,22 +72,14 @@ public class YkPiv implements AutoCloseable {
         for (CardTerminal cardTerminal : terminals) {
             if (wanted != null) {
                 if (!cardTerminal.getName().contains(wanted)) {
-                    if (verbose) {
-                        LOGGER.info(String.format("skipping reader '%s' since it doesn't match '%s'.", cardTerminal.getName(), wanted));
-                    }
                     continue;
                 }
-            }
-            if (verbose) {
-                LOGGER.info(String.format("trying to connect to reader '%s'.", cardTerminal.getName()));
             }
             Card card;
             try {
                 card = cardTerminal.connect("T=1");
             } catch (CardException e) {
-                if (verbose) {
-                    LOGGER.warning(String.format("Failed to connect to reader: %s", e.getMessage()));
-                }
+                LOGGER.log(Level.WARNING, "Failed to connect to reader.", e);
                 continue;
             }
 
@@ -94,7 +91,7 @@ public class YkPiv implements AutoCloseable {
                     throw new YkPivException(String.format("Failed selecting application: %04x", response.getSW()));
                 }
             } catch (CardException e) {
-                LOGGER.warning(String.format("Failed communicating with card: %s", e.getMessage()));
+                LOGGER.log(Level.WARNING, "Failed communicating with card", e);
                 continue;
             }
 
@@ -168,7 +165,7 @@ public class YkPiv implements AutoCloseable {
         throw new YkPivException("Unexpected SW result: " + response.getSW());
     }
 
-    private byte[] transferData(final CommandAPDU adpu, byte[] data) throws YkPivException {
+    private ByteString transferData(final CommandAPDU adpu, ByteString data) throws YkPivException {
         try {
             card.beginExclusive();
         } catch (CardException e) {
@@ -185,46 +182,44 @@ public class YkPiv implements AutoCloseable {
                 // If we can't fit the rest into a single message
                 CommandAPDU partialAdpu;
                 int send_length;
-                if (index + max_length < data.length) {
+                if (index + max_length < data.getLength()) {
                     send_length = max_length;
-                    byte[] partialBytes = new byte[send_length];
-                    System.arraycopy(data, index, partialBytes, 0, send_length);
-                    partialAdpu = new CommandAPDU(0x10, adpu.getINS(), adpu.getP1(), adpu.getP2(), partialBytes);
+                    partialAdpu = new CommandAPDU(0x10, adpu.getINS(), adpu.getP1(), adpu.getP2(),
+                            data.slice(index, send_length).toByteArray());
                 } else {
-                    send_length = data.length - index;
-                    byte[] partialBytes = new byte[send_length];
-                    System.arraycopy(data, index, partialBytes, 0, send_length);
-                    partialAdpu = new CommandAPDU(adpu.getCLA(), adpu.getINS(), adpu.getP1(), adpu.getP2(), partialBytes);
+                    send_length = data.getLength() - index;
+                    partialAdpu = new CommandAPDU(adpu.getCLA(), adpu.getINS(), adpu.getP1(), adpu.getP2(),
+                            data.slice(index, send_length).toByteArray());
                 }
 
                 ResponseAPDU response = card.getBasicChannel().transmit(partialAdpu);
                 sw = response.getSW();
                 if (sw != InternalConstants.SW_SUCCESS && (sw >> 8) != 0x61) {
-                    return baos.toByteArray();
+                    throw new YkPivException(String.format("Error transmitting data: sw=%x", sw));
                 }
                 baos.write(response.getData());
 
                 index += send_length;
-            } while (index < data.length);
+            } while (index < data.getLength());
 
             // Now read all data back
             while (sw >> 8 == 0x61) {
                 ResponseAPDU response = card.getBasicChannel().transmit(new CommandAPDU(0x00, 0xc0, 0x00, 0x00));
                 sw = response.getSW();
                 if (sw != InternalConstants.SW_SUCCESS && sw >> 8 != 0x61) {
-                    return baos.toByteArray();
+                    throw new YkPivException(String.format("Error transmitting data: sw=%x", sw));
                 }
                 baos.write(response.getData());
             }
 
-            return baos.toByteArray();
+            return ByteString.copyOf(baos.toByteArray());
         } catch (CardException | IOException e) {
             throw new YkPivException("Unable to transmit data to card.", e);
         } finally {
             try {
                 card.endExclusive();
             } catch (CardException e) {
-                LOGGER.warning("Unable to end transaction: " + e.getMessage());
+                LOGGER.log(Level.WARNING, "Unable to end transaction", e);
             }
         }
     }
@@ -233,7 +228,8 @@ public class YkPiv implements AutoCloseable {
      * Authenticates to the card, using the 24-byte MGMT key.
      * @param mgmtKey
      */
-    public void authencate(byte[] mgmtKey) throws YkPivException {
+    public void authencate(ByteString mgmtKey) throws YkPivException {
+        final byte[] keyBytes = mgmtKey.toByteArray();
         try {
             // get a challenge from the card
             ResponseAPDU response = card.getBasicChannel().transmit(
@@ -247,7 +243,7 @@ public class YkPiv implements AutoCloseable {
 
             // send a response to the cards challenge and a challenge of our own.
             Cipher decCipher = Cipher.getInstance("DESede/ECB/NoPadding");
-            decCipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(mgmtKey, "DESede"));
+            decCipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "DESede"));
             final byte[] challengeResp = decCipher.doFinal(challenge);
 
             final byte[] ourChallange = new byte[8];
@@ -276,7 +272,7 @@ public class YkPiv implements AutoCloseable {
 
             // Use a constant-time equality check (just as a matter of good practice)
             Cipher encCipher = Cipher.getInstance("DESede/ECB/NoPadding");
-            encCipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(mgmtKey, "DESede"));
+            encCipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(keyBytes, "DESede"));
             if (!MessageDigest.isEqual(cardChallengeResp, encCipher.doFinal(ourChallange))) {
                 throw new YkPivException("Failed to verify card challenge response.");
             }
@@ -287,21 +283,21 @@ public class YkPiv implements AutoCloseable {
         }
     }
 
-    public void setMgmtKey(byte[] newKey) throws YkPivException {
+    public void setMgmtKey(ByteString newKey) throws YkPivException {
         setMgmtKey(newKey, false);
     }
 
-    public void setMgmtKey(byte[] newKey, boolean requireTouch) throws YkPivException {
+    public void setMgmtKey(ByteString newKey, boolean requireTouch) throws YkPivException {
 
-        if (newKey.length != 24) {
+        if (newKey.getLength() != 24) {
             throw new IllegalArgumentException("Management key must be exactly 24 bytes long.");
         }
         // FIXME: This skips weak key checking that's in the C ykpiv library
-        final byte[] data = new byte[3+newKey.length];
+        final byte[] data = new byte[3+newKey.getLength()];
         data[0] = InternalConstants.YKPIV_ALGO_3DES;
         data[1] = InternalConstants.YKPIV_KEY_CARDMGM;
-        data[2] = (byte)newKey.length;
-        System.arraycopy(newKey, 0, data, 3, newKey.length);
+        data[2] = (byte)newKey.getLength();
+        newKey.writeTo(0, data, 3, newKey.getLength());
 
         ResponseAPDU response;
         try {
@@ -333,7 +329,7 @@ public class YkPiv implements AutoCloseable {
         return String.format("%d.%d.%d", data[0], data[1], data[2]);
     }
 
-    private byte[] generateAuthenticate(byte[] input, byte algorithm, byte key, boolean decipher) throws YkPivException {
+    private ByteString generateAuthenticate(ByteString input, byte algorithm, byte key, boolean decipher) throws YkPivException {
         int key_len = 0;
         switch(algorithm) {
             case InternalConstants.YKPIV_ALGO_RSA1024:
@@ -343,8 +339,8 @@ public class YkPiv implements AutoCloseable {
                 if(key_len == 0) {
                     key_len = 256;
                 }
-                if(input.length != key_len) {
-                    throw new IllegalArgumentException("Input length does not match key length: " + input.length + " != " + key_len);
+                if(input.getLength() != key_len) {
+                    throw new IllegalArgumentException("Input length does not match key length: " + input.getLength() + " != " + key_len);
                 }
                 break;
             case InternalConstants.YKPIV_ALGO_ECCP256:
@@ -354,10 +350,10 @@ public class YkPiv implements AutoCloseable {
                 if(key_len == 0) {
                     key_len = 48;
                 }
-                if(!decipher && input.length > key_len) {
-                    throw new IllegalArgumentException("Input length greater than key length: " + input.length + " > " + key_len);
-                } else if(decipher && input.length != (key_len * 2) + 1) {
-                    throw new IllegalArgumentException("Input length incorrect: " + input.length + " != " + (key_len * 2 + 1));
+                if(!decipher && input.getLength() > key_len) {
+                    throw new IllegalArgumentException("Input length greater than key length: " + input.getLength() + " > " + key_len);
+                } else if(decipher && input.getLength() != (key_len * 2) + 1) {
+                    throw new IllegalArgumentException("Input length incorrect: " + input.getLength() + " != " + (key_len * 2 + 1));
                 }
                 break;
             default:
@@ -365,11 +361,11 @@ public class YkPiv implements AutoCloseable {
         }
 
         final boolean isEcAlg = (algorithm == InternalConstants.YKPIV_ALGO_ECCP256 || algorithm == InternalConstants.YKPIV_ALGO_ECCP384);
-        final byte[] data = SimpleAsn1.build((byte)0x7c,
-                SimpleAsn1.build((byte)0x82, new byte[0]),
+        final ByteString data = SimpleAsn1.build((byte)0x7c,
+                SimpleAsn1.build((byte)0x82, ByteString.EMPTY),
                 SimpleAsn1.build(isEcAlg && decipher ? (byte)0x85 : (byte)0x81, input));
 
-        byte[] output = transferData(new CommandAPDU(0x00, InternalConstants.YKPIV_INS_AUTHENTICATE, algorithm, key), data);
+        ByteString output = transferData(new CommandAPDU(0x00, InternalConstants.YKPIV_INS_AUTHENTICATE, algorithm, key), data);
         SimpleAsn1.Asn1Object out = SimpleAsn1.decodeSingleton(output);
         if (out.getTag() != 0x7c) {
             throw new YkPivException("Failed parsing signature reply; got unexpected tag: " + out.getTag());
@@ -381,7 +377,7 @@ public class YkPiv implements AutoCloseable {
         return out.getData();
     }
 
-    public byte[] hashAndSign(InputStream inputStream, Hash hashAlg, KeyAlgorithm algorithm, KeySlot keySlot) throws YkPivException, IOException {
+    public ByteString hashAndSign(InputStream inputStream, Hash hashAlg, KeyAlgorithm algorithm, KeySlot keySlot) throws YkPivException, IOException {
         try {
             final byte[] buffer = new byte[4096];
             int n;
@@ -389,82 +385,81 @@ public class YkPiv implements AutoCloseable {
             while ((n = inputStream.read(buffer)) > 0) {
                 md.update(buffer, 0, n);
             }
-            return sign(md.digest(), hashAlg, algorithm, keySlot);
+            return sign(ByteString.copyOf(md.digest()), hashAlg, algorithm, keySlot);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalArgumentException("Invalid hash algorithm: " + hashAlg);
         }
     }
 
-    public byte[] hashAndSign(byte[] input, Hash hashAlg, KeyAlgorithm algorithm, KeySlot keySlot) throws YkPivException {
+    public ByteString hashAndSign(byte[] input, Hash hashAlg, KeyAlgorithm algorithm, KeySlot keySlot) throws YkPivException {
         try {
             MessageDigest md = MessageDigest.getInstance(hashAlg.getJceAlgorithmName());
-            return sign(md.digest(input), hashAlg, algorithm, keySlot);
+            return sign(ByteString.copyOf(md.digest(input)), hashAlg, algorithm, keySlot);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalArgumentException("Invalid hash algorithm: " + hashAlg);
         }
     }
 
     // https://golang.org/src/crypto/rsa/pkcs1v15.go#L204
-    private static final Map<Hash, byte[]> SIG_HASH_PREFIX;
+    private static final Map<Hash, ByteString> SIG_HASH_PREFIX;
     static {
         SIG_HASH_PREFIX = new EnumMap<>(Hash.class);
-        SIG_HASH_PREFIX.put(Hash.MD5, new byte[]{0x30, 0x20, 0x30, 0x0c, 0x06, 0x08, 0x2a, (byte)0x86, 0x48, (byte)0x86, (byte)0xf7, 0x0d, 0x02, 0x05, 0x05, 0x00, 0x04, 0x10});
-        SIG_HASH_PREFIX.put(Hash.SHA1, new byte[]{0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14});
-        SIG_HASH_PREFIX.put(Hash.SHA224, new byte[]{0x30, 0x2d, 0x30, 0x0d, 0x06, 0x09, 0x60, (byte)0x86, 0x48, 0x01,
-                0x65, 0x03, 0x04, 0x02, 0x04, 0x05, 0x00, 0x04, 0x1c});
-        SIG_HASH_PREFIX.put(Hash.SHA256, new byte[]{0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, (byte)0x86, 0x48, 0x01,
-                0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20});
-        SIG_HASH_PREFIX.put(Hash.SHA384, new byte[]{0x30, 0x41, 0x30, 0x0d, 0x06, 0x09, 0x60, (byte)0x86, 0x48, 0x01,
-                0x65, 0x03, 0x04, 0x02, 0x02, 0x05, 0x00, 0x04, 0x30});
-        SIG_HASH_PREFIX.put(Hash.SHA512, new byte[]{0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, (byte)0x86, 0x48, 0x01,
-                0x65, 0x03, 0x04, 0x02, 0x03, 0x05, 0x00, 0x04, 0x40});
+        SIG_HASH_PREFIX.put(Hash.MD5, ByteString.copyOf(new byte[]{0x30, 0x20, 0x30, 0x0c, 0x06, 0x08, 0x2a, (byte)0x86, 0x48, (byte)0x86, (byte)0xf7, 0x0d, 0x02, 0x05, 0x05, 0x00, 0x04, 0x10}));
+        SIG_HASH_PREFIX.put(Hash.SHA1, ByteString.copyOf(new byte[]{0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14}));
+        SIG_HASH_PREFIX.put(Hash.SHA224, ByteString.copyOf(new byte[]{0x30, 0x2d, 0x30, 0x0d, 0x06, 0x09, 0x60, (byte)0x86, 0x48, 0x01,
+                0x65, 0x03, 0x04, 0x02, 0x04, 0x05, 0x00, 0x04, 0x1c}));
+        SIG_HASH_PREFIX.put(Hash.SHA256, ByteString.copyOf(new byte[]{0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, (byte)0x86, 0x48, 0x01,
+                0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20}));
+        SIG_HASH_PREFIX.put(Hash.SHA384, ByteString.copyOf(new byte[]{0x30, 0x41, 0x30, 0x0d, 0x06, 0x09, 0x60, (byte)0x86, 0x48, 0x01,
+                0x65, 0x03, 0x04, 0x02, 0x02, 0x05, 0x00, 0x04, 0x30}));
+        SIG_HASH_PREFIX.put(Hash.SHA512, ByteString.copyOf(new byte[]{0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, (byte)0x86, 0x48, 0x01,
+                0x65, 0x03, 0x04, 0x02, 0x03, 0x05, 0x00, 0x04, 0x40}));
     }
 
-    public byte[] sign(byte[] hashed, Hash hashAlg, KeyAlgorithm algorithm, KeySlot keySlot) throws YkPivException {
-        byte[] bytesToSign;
+    public ByteString sign(ByteString hashed, Hash hashAlg, KeyAlgorithm algorithm, KeySlot keySlot) throws YkPivException {
+        ByteString bytesToSign;
         if (algorithm == KeyAlgorithm.RSA_1024 || algorithm == KeyAlgorithm.RSA_2048) {
-            final byte[] prefix = SIG_HASH_PREFIX.get(hashAlg);
+            final ByteString prefix = SIG_HASH_PREFIX.get(hashAlg);
             if (prefix == null) {
                 throw new IllegalArgumentException("Unsupported hash algorithm: " + hashAlg);
             }
-            byte[] prefixedHash = new byte[prefix.length + hashed.length];
-            System.arraycopy(prefix, 0, prefixedHash, 0, prefix.length);
-            System.arraycopy(hashed, 0, prefixedHash, prefix.length, hashed.length);
-            bytesToSign = Pkcs1v15.pad(prefixedHash, algorithm == KeyAlgorithm.RSA_1024 ? 128 : 256);
+            byte[] prefixedHash = new byte[prefix.getLength() + hashed.getLength()];
+            prefix.writeTo(0, prefixedHash, 0, prefix.getLength());
+            hashed.writeTo(0, prefixedHash, prefix.getLength(), hashed.getLength());
+            bytesToSign = Pkcs1v15.pad(ByteString.copyOf(prefixedHash), algorithm == KeyAlgorithm.RSA_1024 ? 128 : 256);
         } else {
             // EC methods don't need the hash algorithm prefix or padding, but we may need to truncate long hashes
             int keyLen = algorithm == KeyAlgorithm.EC_256 ? 32 : 48;
-            if (hashed.length <= keyLen) {
+            if (hashed.getLength() <= keyLen) {
                 bytesToSign = hashed;
             } else {
-                bytesToSign = new byte[keyLen];
-                System.arraycopy(hashed, 0, bytesToSign, 0, keyLen);
+                bytesToSign = hashed.slice(0, keyLen);
             }
         }
         return signInternal(bytesToSign, algorithm.getYkpivAlgorithm(), keySlot.getKeyId());
     }
 
-    private byte[] signInternal(byte[] rawIn, byte algorithm, byte key) throws YkPivException {
+    private ByteString signInternal(ByteString rawIn, byte algorithm, byte key) throws YkPivException {
         return generateAuthenticate(rawIn, algorithm, key, false);
     }
 
-    public byte[] decipher(byte[] rawIn, KeyAlgorithm algorithm, KeySlot key) throws YkPivException {
+    public ByteString decipher(ByteString rawIn, KeyAlgorithm algorithm, KeySlot key) throws YkPivException {
         return generateAuthenticate(rawIn, algorithm.getYkpivAlgorithm(), key.getKeyId(), true);
     }
 
     public PublicKey generateKey(KeySlot slot, KeyAlgorithm algorithm, PinPolicy pinPolicy, TouchPolicy touchPolicy) throws YkPivException {
 
-        List<byte[]> params = new ArrayList<>();
-        params.add(SimpleAsn1.build(InternalConstants.YKPIV_ALGO_TAG, new byte[] {algorithm.getYkpivAlgorithm()}));
+        List<ByteString> params = new ArrayList<>();
+        params.add(SimpleAsn1.build(InternalConstants.YKPIV_ALGO_TAG, ByteString.copyOf(new byte[] {algorithm.getYkpivAlgorithm()})));
         if (pinPolicy != PinPolicy.DEFAULT) {
-            params.add(SimpleAsn1.build(InternalConstants.YKPIV_PINPOLICY_TAG, new byte[] {pinPolicy.getYkpivPinPolicy()}));
+            params.add(SimpleAsn1.build(InternalConstants.YKPIV_PINPOLICY_TAG, ByteString.copyOf(new byte[] {pinPolicy.getYkpivPinPolicy()})));
         }
         if (touchPolicy != TouchPolicy.DEFAULT) {
-            params.add(SimpleAsn1.build(InternalConstants.YKPIV_TOUCHPOLICY_TAG, new byte[] {touchPolicy.getYkpivTouchPolicy()}));
+            params.add(SimpleAsn1.build(InternalConstants.YKPIV_TOUCHPOLICY_TAG, ByteString.copyOf(new byte[] {touchPolicy.getYkpivTouchPolicy()})));
         }
-        final byte[] data = SimpleAsn1.build((byte)0xac, params.toArray(new byte[params.size()][]));
+        final ByteString data = SimpleAsn1.build((byte)0xac, params.toArray(new ByteString[params.size()]));
 
-        byte[] output = transferData(new CommandAPDU(0x00, InternalConstants.YKPIV_INS_GENERATE_ASYMMETRIC, 0x00, slot.getKeyId()), data);
+        ByteString output = transferData(new CommandAPDU(0x00, InternalConstants.YKPIV_INS_GENERATE_ASYMMETRIC, 0x00, slot.getKeyId()), data);
         SimpleAsn1.Asn1Object result = SimpleAsn1.decodeSingleton(output);
 
         try {
@@ -482,8 +477,8 @@ public class YkPiv implements AutoCloseable {
                 if (parts.get(1).getTag() != 0x82) {
                     throw new YkPivException("Got unexpected tag on second RSA part: " + parts.get(1).getTag());
                 }
-                BigInteger n = new BigInteger(1, parts.get(0).getData());
-                BigInteger e = new BigInteger(1, parts.get(1).getData());
+                BigInteger n = new BigInteger(1, parts.get(0).getData().toByteArray());
+                BigInteger e = new BigInteger(1, parts.get(1).getData().toByteArray());
 
                 KeyFactory keyFactory = KeyFactory.getInstance("RSA");
                 return keyFactory.generatePublic(new RSAPublicKeySpec(n, e));
@@ -495,19 +490,20 @@ public class YkPiv implements AutoCloseable {
                 if (parts.size() != 1) {
                     throw new YkPivException("Got unexpected number of parts from EC key response: " + parts.size());
                 }
+                final ByteString ecData = parts.get(0).getData();
                 BigInteger pubX, pubY;
                 if (algorithm == KeyAlgorithm.EC_256) {
-                    if (parts.get(0).getData().length != 65) {
+                    if (ecData.getLength() != 65) {
                         throw new YkPivException("EC public key point is expected to be exactly 65 bytes long.");
                     }
-                    pubX = new BigInteger(1, Arrays.copyOfRange(parts.get(0).getData(), 1, 33));
-                    pubY = new BigInteger(1, Arrays.copyOfRange(parts.get(0).getData(), 33, 65));
+                    pubX = new BigInteger(1, ecData.slice(1, 32).toByteArray());
+                    pubY = new BigInteger(1, ecData.slice(33, 32).toByteArray());
                 } else if (algorithm == KeyAlgorithm.EC_384) {
-                    if (parts.get(0).getData().length != 97) {
+                    if (ecData.getLength() != 97) {
                         throw new YkPivException("EC public key point is expected to be exactly 97 bytes long.");
                     }
-                    pubX = new BigInteger(1, Arrays.copyOfRange(parts.get(0).getData(), 1, 49));
-                    pubY = new BigInteger(1, Arrays.copyOfRange(parts.get(0).getData(), 49, 97));
+                    pubX = new BigInteger(1, ecData.slice(1, 48).toByteArray());
+                    pubY = new BigInteger(1, ecData.slice(49, 48).toByteArray());
                 } else {
                     throw new IllegalArgumentException("Unsupported algorithm: " + algorithm);
                 }
@@ -537,21 +533,19 @@ public class YkPiv implements AutoCloseable {
         }
     }
 
-    private static byte[] magnitude(BigInteger b) {
+    private static ByteString magnitude(BigInteger b) {
         byte[] bytes = b.toByteArray();
         if (bytes[0] == 0x00) {
-            byte[] output = new byte[bytes.length-1];
-            System.arraycopy(bytes, 1, output, 0, output.length);
-            return output;
+            return ByteString.copyOf(bytes, 1, bytes.length-1);
         }
-        return bytes;
+        return ByteString.copyOf(bytes);
     }
 
     public void importPrivateKey(KeySlot keySlot, PrivateKey privateKey, PinPolicy pinPolicy, TouchPolicy touchPolicy) throws YkPivException {
 
         try {
             byte algorithm;
-            List<byte[]> params = new ArrayList<>();
+            List<ByteString> params = new ArrayList<>();
             byte paramTag;
 
             if (privateKey instanceof RSAPrivateKey) {
@@ -601,7 +595,7 @@ public class YkPiv implements AutoCloseable {
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream(1024);
             for (int i = 0; i < params.size(); i++) {
-                baos.write(SimpleAsn1.build((byte)(paramTag+i), params.get(i)));
+                SimpleAsn1.build((byte)(paramTag+i), params.get(i)).writeTo(baos);
             }
             if (pinPolicy != PinPolicy.DEFAULT) {
                 baos.write(InternalConstants.YKPIV_PINPOLICY_TAG);
@@ -614,7 +608,8 @@ public class YkPiv implements AutoCloseable {
                 baos.write(touchPolicy.getYkpivTouchPolicy());
             }
 
-            transferData(new CommandAPDU(0x00, InternalConstants.YKPIV_INS_IMPORT_KEY, algorithm, keySlot.getKeyId()), baos.toByteArray());
+            transferData(new CommandAPDU(0x00, InternalConstants.YKPIV_INS_IMPORT_KEY, algorithm, keySlot.getKeyId()),
+                    ByteString.copyOf(baos.toByteArray()));
 
         } catch (IOException e) {
             throw new IllegalStateException("IOException writing to ByteArrayOutputStream.", e);
@@ -634,23 +629,25 @@ public class YkPiv implements AutoCloseable {
         }
     }
 
-    private void saveObject(int objectId, byte[] data) throws YkPivException {
+    private void saveObject(int objectId, ByteString data) throws YkPivException {
         try {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream(data.length + 9);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream(data.getLength() + 9);
             writeObjectId(baos, objectId);
-            baos.write(SimpleAsn1.build((byte)0x53, data));
+            SimpleAsn1.build((byte)0x53, data).writeTo(baos);
 
-            transferData(new CommandAPDU(0x00, InternalConstants.YKPIV_INS_PUT_DATA, 0x3f, 0xff), baos.toByteArray());
+            transferData(new CommandAPDU(0x00, InternalConstants.YKPIV_INS_PUT_DATA, 0x3f, 0xff),
+                    ByteString.copyOf(baos.toByteArray()));
         } catch (IOException e) {
             throw new IllegalStateException("Got IOException writing to ByteArrayOutputStream.", e);
         }
     }
 
-    private byte[] fetchObject(int objectId) throws YkPivException {
+    private ByteString fetchObject(int objectId) throws YkPivException {
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream(5);
             writeObjectId(baos, objectId);
-            byte[] output = transferData(new CommandAPDU(0x00, InternalConstants.YKPIV_INS_GET_DATA, 0x3f, 0xff), baos.toByteArray());
+            ByteString output = transferData(new CommandAPDU(0x00, InternalConstants.YKPIV_INS_GET_DATA, 0x3f, 0xff),
+                    ByteString.copyOf(baos.toByteArray()));
             return SimpleAsn1.decodeSingleton(output).getData();
         } catch (IOException e) {
             throw new IllegalStateException("Got IOException writing to ByteArrayOutputStream.", e);
@@ -708,12 +705,12 @@ public class YkPiv implements AutoCloseable {
 
     public void saveCertificate(KeySlot slot, Certificate cert) throws YkPivException {
         try {
-            final byte[] encoded = cert.getEncoded();
-            final ByteArrayOutputStream baos = new ByteArrayOutputStream(encoded.length + 8);
-            baos.write(SimpleAsn1.build((byte)0x70, encoded));
-            baos.write(SimpleAsn1.build((byte)0x71, new byte[]{0x00}));
-            baos.write(SimpleAsn1.build((byte)0x72, new byte[0]));
-            saveObject(slot.getObjectId(), baos.toByteArray());
+            final ByteString encoded = ByteString.copyOf(cert.getEncoded());
+            final ByteArrayOutputStream baos = new ByteArrayOutputStream(encoded.getLength() + 8);
+            SimpleAsn1.build((byte)0x70, encoded).writeTo(baos);
+            SimpleAsn1.build((byte)0x71, ByteString.copyOf(new byte[]{0x00})).writeTo(baos);
+            SimpleAsn1.build((byte)0x72, ByteString.EMPTY).writeTo(baos);
+            saveObject(slot.getObjectId(), ByteString.copyOf(baos.toByteArray()));
         } catch (CertificateEncodingException | IOException e) {
             throw new IllegalStateException("Unable to encode certificate", e);
         }
@@ -728,8 +725,8 @@ public class YkPiv implements AutoCloseable {
         }
         try {
             final CertificateFactory certificateFactory = CertificateFactory.getInstance("X509");
-            try (ByteArrayInputStream bais = new ByteArrayInputStream(objects.get(0).getData())) {
-                return (X509Certificate) certificateFactory.generateCertificate(bais);
+            try (InputStream inputStream = objects.get(0).getData().newInputStream()) {
+                return (X509Certificate) certificateFactory.generateCertificate(inputStream);
             }
         } catch (CertificateException | IOException e) {
             throw new YkPivException("Unable to parse fetched certificate.", e);
@@ -737,18 +734,19 @@ public class YkPiv implements AutoCloseable {
     }
 
     public void deleteCertificate(KeySlot slot) throws YkPivException {
-        saveObject(slot.getObjectId(), new byte[0]);
+        saveObject(slot.getObjectId(), ByteString.EMPTY);
     }
 
     public X509Certificate attest(KeySlot slot) throws YkPivException {
-        byte[] output = transferData(new CommandAPDU(0x00, InternalConstants.YKPIV_INS_ATTEST, slot.getKeyId(), 0x00), new byte[] {0x00});
-        if (output.length == 0) {
+        ByteString output = transferData(new CommandAPDU(0x00, InternalConstants.YKPIV_INS_ATTEST, slot.getKeyId(), 0x00),
+                ByteString.copyOf(new byte[] {0x00}));
+        if (output.getLength() == 0) {
             return null;
         }
         try {
             CertificateFactory certificateFactory = CertificateFactory.getInstance("X509");
-            try (ByteArrayInputStream bais = new ByteArrayInputStream(output)) {
-                return (X509Certificate) certificateFactory.generateCertificate(bais);
+            try (InputStream inputStream = output.newInputStream()) {
+                return (X509Certificate) certificateFactory.generateCertificate(inputStream);
             }
         } catch (CertificateException | IOException e) {
             throw new IllegalStateException("Unable to parse attestation certificate.", e);
