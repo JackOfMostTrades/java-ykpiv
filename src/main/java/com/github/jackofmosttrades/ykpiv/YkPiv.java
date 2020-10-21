@@ -42,7 +42,7 @@ public class YkPiv implements AutoCloseable {
     private Card card;
 
     public YkPiv() throws YkPivException {
-        this("Yubikey");
+        this("YubiKey");
     }
 
     /**
@@ -249,7 +249,7 @@ public class YkPiv implements AutoCloseable {
      * Authenticates to the card, using the 24-byte MGMT key.
      * @param mgmtKey
      */
-    public void authencate(ByteString mgmtKey) throws YkPivException {
+    public void authenticate(ByteString mgmtKey) throws YkPivException {
         final byte[] keyBytes = mgmtKey.toByteArray();
         try {
             // get a challenge from the card

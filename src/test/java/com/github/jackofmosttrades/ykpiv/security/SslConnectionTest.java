@@ -58,7 +58,7 @@ public class SslConnectionTest {
         X509CertificateHolder caCert = mintCert(caName, caName, caKeyPair.getPublic(), caKeyPair.getPrivate());
 
         try (YkPiv ykPiv = new YkPiv()) {
-            ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
+            ykPiv.authenticate(YkPiv.DEFAULT_MGMT_KEY);
             PublicKey publicKey = ykPiv.generateKey(KeySlot.AUTHENTICATION, KeyAlgorithm.RSA_2048, PinPolicy.NEVER, TouchPolicy.NEVER);
             X509CertificateHolder leafCert = mintCert(new X500Name("CN=localhost"), caName, publicKey, caKeyPair.getPrivate());
             ykPiv.saveCertificate(KeySlot.AUTHENTICATION, new JcaX509CertificateConverter().getCertificate(leafCert));
@@ -110,7 +110,7 @@ public class SslConnectionTest {
         X509CertificateHolder clientCaCert = mintCert(clientCaName, clientCaName, clientCaKp.getPublic(), clientCaKp.getPrivate());
 
         try (YkPiv ykPiv = new YkPiv()) {
-            ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
+            ykPiv.authenticate(YkPiv.DEFAULT_MGMT_KEY);
             PublicKey publicKey = ykPiv.generateKey(KeySlot.AUTHENTICATION, KeyAlgorithm.RSA_2048, PinPolicy.NEVER, TouchPolicy.NEVER);
             X509CertificateHolder leafCert = mintCert(new X500Name("CN=My Client"), clientCaName, publicKey, clientCaKp.getPrivate());
             ykPiv.saveCertificate(KeySlot.AUTHENTICATION, new JcaX509CertificateConverter().getCertificate(leafCert));
