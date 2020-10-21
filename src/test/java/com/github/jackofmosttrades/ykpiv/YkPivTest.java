@@ -44,20 +44,20 @@ public class YkPivTest {
         final ByteString ALT_MGMT_KEY = ByteString.copyOf(new byte[]{11,12,13,14,15,16,17,18,11,12,13,14,15,16,17,18,11,12,13,14,15,16,17,18});
 
         try (YkPiv ykPiv = new YkPiv()) {
-            ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
+            ykPiv.authenticate(YkPiv.DEFAULT_MGMT_KEY);
 
             ykPiv.setMgmtKey(ALT_MGMT_KEY);
-            ykPiv.authencate(ALT_MGMT_KEY);
+            ykPiv.authenticate(ALT_MGMT_KEY);
             try {
-                ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
+                ykPiv.authenticate(YkPiv.DEFAULT_MGMT_KEY);
                 Assert.fail("Should have thrown an exception.");
             } catch (YkPivException e) {
                 Assert.assertNotNull(e);
             }
 
-            ykPiv.authencate(ALT_MGMT_KEY);
+            ykPiv.authenticate(ALT_MGMT_KEY);
             ykPiv.setMgmtKey(YkPiv.DEFAULT_MGMT_KEY);
-            ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
+            ykPiv.authenticate(YkPiv.DEFAULT_MGMT_KEY);
         }
     }
 
@@ -88,7 +88,7 @@ public class YkPivTest {
     private void runTestGenerateSignAndVerify(KeyAlgorithm keyAlgorithm, Hash hashAlgorithm, String jceAlgorithm) throws YkPivException, NoSuchAlgorithmException, InvalidKeyException, SignatureException {
         final byte[] data = "Hello, World!".getBytes(StandardCharsets.UTF_8);
         try (YkPiv ykPiv = new YkPiv()) {
-            ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
+            ykPiv.authenticate(YkPiv.DEFAULT_MGMT_KEY);
             PublicKey publicKey = ykPiv.generateKey(KeySlot.AUTHENTICATION, keyAlgorithm, PinPolicy.NEVER, TouchPolicy.NEVER);
             Assert.assertTrue(ykPiv.login(YkPiv.DEFAULT_PIN));
             ByteString signature = ykPiv.hashAndSign(data, hashAlgorithm, keyAlgorithm, KeySlot.AUTHENTICATION);
@@ -147,7 +147,7 @@ public class YkPivTest {
             keyPairGenerator.initialize(keySize);
             KeyPair keyPair = keyPairGenerator.generateKeyPair();
             
-            ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
+            ykPiv.authenticate(YkPiv.DEFAULT_MGMT_KEY);
             ykPiv.importPrivateKey(KeySlot.AUTHENTICATION, keyPair.getPrivate(), PinPolicy.NEVER, TouchPolicy.NEVER);
             Assert.assertTrue(ykPiv.login(YkPiv.DEFAULT_PIN));
             ByteString signature = ykPiv.hashAndSign(data, hashAlgorithm, keyAlgorithm, KeySlot.AUTHENTICATION);
@@ -169,7 +169,7 @@ public class YkPivTest {
             cert = certificateFactory.generateCertificate(bais);
         }
         try (YkPiv ykPiv = new YkPiv()) {
-            ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
+            ykPiv.authenticate(YkPiv.DEFAULT_MGMT_KEY);
             ykPiv.saveCertificate(KeySlot.AUTHENTICATION, cert);
             Certificate fetched = ykPiv.readCertificate(KeySlot.AUTHENTICATION);
             Assert.assertArrayEquals(cert.getEncoded(), fetched.getEncoded());
@@ -251,7 +251,7 @@ public class YkPivTest {
     @Test
     public void testAttest() throws YkPivException, CertificateEncodingException {
         try (YkPiv ykPiv = new YkPiv()) {
-            ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
+            ykPiv.authenticate(YkPiv.DEFAULT_MGMT_KEY);
             Assert.assertTrue(ykPiv.login(YkPiv.DEFAULT_PIN));
             PublicKey publicKey = ykPiv.generateKey(KeySlot.AUTHENTICATION, KeyAlgorithm.RSA_2048, PinPolicy.NEVER, TouchPolicy.NEVER);
             X509Certificate cert = (X509Certificate) ykPiv.attest(KeySlot.AUTHENTICATION);

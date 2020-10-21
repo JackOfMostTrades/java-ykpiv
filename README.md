@@ -26,9 +26,9 @@ This is a brief example of using the library to generate a key in the Authentica
 
 ```java
 try (YkPiv ykPiv = new YkPiv()) {
-    ykPiv.authencate(YkPiv.DEFAULT_MGMT_KEY);
+    ykPiv.authenticate(YkPiv.DEFAULT_MGMT_KEY);
     PublicKey publicKey = ykPiv.generateKey(KeySlot.AUTHENTICATION, keyAlgorithm, PinPolicy.NEVER, TouchPolicy.NEVER);
-    ykPiv.verify(YkPiv.DEFAULT_PIN);
+    ykPiv.login(YkPiv.DEFAULT_PIN);
     byte[] signature = ykPiv.hashAndSign(data, hashAlgorithm, keyAlgorithm, KeySlot.AUTHENTICATION);
 }
 ```
